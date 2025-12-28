@@ -1,127 +1,148 @@
 import os
-import glob
-import numpy as np
+import sys
+import urllib.parse
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, MetaData, Table, text
+from sqlalchemy.dialects.postgresql import insert
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# --- CONFIGURATION ---
+CSV_FILENAME = "abuja_gapp_fill.csv"
+CSV_FOLDER = "./we_csv_files"
+TABLE_NAME = "daily_weather"
+BATCH_SIZE = 200  # Process 200 rows at a time to prevent "Too Many Parameters" error
+
 def get_db_engine():
-    return create_engine(
-        f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@"
-        f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-    )
-
-def clean_series(series, name):
     """
-    Applies physics-based limits to sensor data.
+    Creates a database engine with safe password handling.
     """
-    series = pd.to_numeric(series, errors='coerce')
-    
-    if name == 'temperature':
-        # Abuja record low is ~15C, High is ~40C. Buffer 10-50.
-        series = series.mask((series < 10) | (series > 50))
-    elif name == 'humidity':
-        series = series.mask((series < 0) | (series > 100))
-    elif name in ['pm2_5', 'pm10']:
-        series = series.mask(series < 0) 
-    
-    return series
+    user = os.getenv('DB_USER')
+    password = os.getenv('DB_PASS')
+    host = os.getenv('DB_HOST')
+    port = os.getenv('DB_PORT', '5432')
+    dbname = os.getenv('DB_NAME')
 
-def process_csv_history():
-    # folder path
-    raw_path = "./we_csv_files" 
+    if not all([user, password, host, dbname]):
+        print("ERROR: Missing database credentials in .env")
+        sys.exit(1)
+
+    # Encode password to handle special characters safely
+    encoded_pass = urllib.parse.quote_plus(password)
     
-    # Check if folder exists
-    if not os.path.exists(raw_path):
-        print(f" ERROR: Folder '{raw_path}' not found!")
-        print("Make sure you created this folder and put your CSVs inside it.")
+    return create_engine(f"postgresql://{user}:{encoded_pass}@{host}:{port}/{dbname}")
+
+def upsert_in_chunks(df, engine, chunk_size):
+    """
+    Inserts data in small batches (chunks) to avoid crashing the DB driver.
+    """
+    metadata = MetaData()
+    table = Table(TABLE_NAME, metadata, autoload_with=engine)
+    
+    total_rows = len(df)
+    print(f"Starting Upsert for {total_rows} rows (Batch size: {chunk_size})...")
+
+    # Connect once, then loop through chunks
+    with engine.begin() as conn:
+        for start_idx in range(0, total_rows, chunk_size):
+            end_idx = start_idx + chunk_size
+            chunk = df.iloc[start_idx : end_idx]
+            
+            # Convert chunk to list of dicts (handle NaNs as NULL)
+            records = chunk.where(pd.notnull(chunk), None).to_dict(orient='records')
+
+            # 1. Create Insert Statement
+            stmt = insert(table).values(records)
+
+            # 2. Define Update Logic (Update all cols EXCEPT Primary Keys)
+            update_dict = {
+                col.name: col 
+                for col in stmt.excluded 
+                if col.name not in ['date', 'city'] 
+            }
+
+            # 3. Create Upsert Statement (On Conflict Do Update)
+            on_conflict_stmt = stmt.on_conflict_do_update(
+                index_elements=['date', 'city'],
+                set_=update_dict
+            )
+
+            # 4. Execute
+            conn.execute(on_conflict_stmt)
+            print(f"   ✓ Processed rows {start_idx} to {min(end_idx, total_rows)}")
+
+    print("SUCCESS: All batches processed.")
+
+def verify_data(engine):
+    """
+    Prints a quick summary of what is currently in the DB.
+    """
+    with engine.connect() as conn:
+        result = conn.execute(text(f"SELECT COUNT(*) FROM {TABLE_NAME}"))
+        count = result.scalar()
+        print(f"\n[Verification] Total rows in '{TABLE_NAME}': {count}")
+
+def load_history():
+    file_path = os.path.join(CSV_FOLDER, CSV_FILENAME)
+    
+    if not os.path.exists(file_path):
+        print(f"ERROR: File not found at {file_path}")
         return
 
-    csv_files = glob.glob(os.path.join(raw_path, "*.csv"))
-    
-    if not csv_files:
-        print(f" No CSV files found in '{raw_path}'.")
-        return
-
-    print(f"Found {len(csv_files)} files. Reading and parsing...")
-    
-    all_data = []
-    
-    # 1. Read the data 
-    for file in csv_files:
-        try:
-            # Read file without header
-            temp_df = pd.read_csv(file, header=None, names=["combined_data"])
-            
-            # Split the semicolon format
-            split_data = temp_df['combined_data'].str.split(';', expand=True)
-            
-            # Extract relevant columns (Index 5=Time, 6=Type, 7=Value)
-            clean_df = pd.DataFrame({
-                'timestamp': pd.to_datetime(split_data[5], errors='coerce'),
-                'value_type': split_data[6],
-                'value': split_data[7]
-            })
-            
-            clean_df = clean_df.dropna(subset=['timestamp'])
-            all_data.append(clean_df)
-            
-        except Exception as e:
-            print(f"Skipping corrupt file {file}: {e}")
-
-    if not all_data:
-        print("No valid data extracted.")
-        return
-
-    full_df = pd.concat(all_data, ignore_index=True)
-    
-    # 2. Restructure the Dataset
-    print("Pivoting data...")
-    metrics_map = {
-        'temperature': 'temperature',
-        'humidity': 'humidity',
-        'P2': 'pm2_5',
-        'P1': 'pm10'
-    }
-    
-    full_df = full_df[full_df['value_type'].isin(metrics_map.keys())]
-    full_df['value'] = pd.to_numeric(full_df['value'], errors='coerce')
-    
-    pivot_df = full_df.pivot_table(index='timestamp', columns='value_type', values='value', aggfunc='mean')
-    pivot_df = pivot_df.rename(columns=metrics_map)
-    
-    for col in metrics_map.values():
-        if col not in pivot_df.columns:
-            pivot_df[col] = np.nan
-
-    # 3. Resampling the data and filling missing data
-    print("Cleaning and Resampling...")
-    
-    daily_df = pivot_df.resample('D').mean()
-    
-    for col in daily_df.columns:
-        daily_df[col] = clean_series(daily_df[col], col)
-
-    # Imputation
-    daily_df = daily_df.interpolate(method='time', limit=3)
-    daily_df = daily_df.ffill().bfill()
-
-    daily_df['city'] = 'Abuja'
-    daily_df['source'] = 'csv_history'
-    daily_df = daily_df.reset_index()
-
-    # 4. Uploading the data
-    print(f"Uploading {len(daily_df)} clean daily records to DB...")
-    engine = get_db_engine()
+    print(f"Reading {file_path}...")
     
     try:
-        daily_df.to_sql('sensor_data', engine, if_exists='append', index=False)
-        print(" Success! History loaded.")
-        print(daily_df.head())
+        # 1. Read and Prep Data
+        df = pd.read_csv(file_path)
+        
+        required_cols = [
+            'datetime', 'temp', 'tempmax', 'tempmin', 
+            'humidity', 'precip', 'windspeed', 
+            'sealevelpressure', 'cloudcover'
+        ]
+        
+        # Validation
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            print(f"ERROR: CSV missing columns: {missing}")
+            return
+
+        clean_df = df[required_cols].copy()
+        
+        clean_df = clean_df.rename(columns={
+            'datetime': 'date',
+            'temp': 'temp_avg',
+            'tempmax': 'temp_max',
+            'tempmin': 'temp_min',
+            'sealevelpressure': 'pressure'
+        })
+        
+        clean_df['date'] = pd.to_datetime(clean_df['date']).dt.date
+        clean_df['precip'] = clean_df['precip'].fillna(0.0)
+        clean_df['city'] = 'Abuja'
+        clean_df['source'] = 'visual_crossing_csv'
+
+        # --- NEW: METHOD 1 (Pandas Deduplication) ---
+        # This removes duplicates inside the CSV before they ever reach the DB.
+        # We keep 'last' assuming the later row in the file is the most corrected version.
+        initial_count = len(clean_df)
+        clean_df = clean_df.drop_duplicates(subset=['date', 'city'], keep='last')
+        final_count = len(clean_df)
+
+        if initial_count > final_count:
+            print(f"⚠ Cleaned up {initial_count - final_count} duplicate rows in the CSV itself.")
+        # --------------------------------------------
+
+        # 2. Run the Chunked Upsert
+        engine = get_db_engine()
+        upsert_in_chunks(clean_df, engine, BATCH_SIZE)
+        
+        # 3. Verify
+        verify_data(engine)
+        
     except Exception as e:
-        print(f"Upload failed: {e}")
+        print(f"\nCRITICAL ERROR: {e}")
 
 if __name__ == "__main__":
-    process_csv_history()
+    load_history()

@@ -24,21 +24,23 @@ def get_data_since_last_training(last_known_date):
     print(f"Fetching fresh data since {last_known_date}...")
     
     query = """
-        SELECT timestamp, temperature 
-        FROM sensor_data
-        WHERE temperature IS NOT NULL 
-        AND timestamp > %(last_date)s
-        ORDER BY timestamp ASC
+        SELECT date, temp_avg
+        FROM daily_weather
+        WHERE temp_avg IS NOT NULL 
+        AND date > %(last_date)s
+        ORDER BY date ASC
     """
     df = pd.read_sql(query, engine, params={'last_date': last_known_date})
     
     if df.empty:
         return pd.Series(dtype=float)
     
-    # process exactly like training (Daily Mean)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df.set_index('timestamp', inplace=True)
-    daily_data = df['temperature'].resample('D').mean().interpolate(method='time')
+    # Convert date column to datetime and set as index
+    df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
+    
+    # Extract the temp_avg column as a Series with DatetimeIndex
+    daily_data = df['temp_avg']
     
     return daily_data
 
@@ -60,7 +62,9 @@ def generate_forecast():
         new_data = get_data_since_last_training(last_training_date)
         
         # Filter out any data that overlaps with what the model already has.
-        new_data = new_data[new_data.index > last_training_date]
+        # (This should already be handled by the SQL query, but keeping for safety)
+        if not new_data.empty:
+            new_data = new_data[new_data.index > last_training_date]
         
         # 4. Update the Model State
         if not new_data.empty:
@@ -82,13 +86,14 @@ def generate_forecast():
         # 6. Save
         forecast_df = pd.DataFrame({
             'forecast_date': forecast_dates,
-            'predicted_temperature': forecast.values,
+            'city': 'Abuja',
+            'predicted_temp': forecast.values,
             'model_version': 'production_rolled',
             'created_at': datetime.now()
         })
         
         print("Predictions generated:")
-        print(forecast_df[['forecast_date', 'predicted_temperature']])
+        print(forecast_df[['forecast_date', 'predicted_temp']])
         
         engine = get_db_engine()
         forecast_df.to_sql('daily_forecasts', engine, if_exists='append', index=False)

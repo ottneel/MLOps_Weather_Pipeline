@@ -33,11 +33,11 @@ def get_clean_data():
         f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
     )
     
-    query = "SELECT timestamp, temperature FROM sensor_data WHERE temperature IS NOT NULL ORDER BY timestamp ASC"
+    query = "SELECT date, temp_avg FROM daily_weather WHERE temp_avg IS NOT NULL ORDER BY date ASC"
     df = pd.read_sql(query, engine)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df.set_index('timestamp', inplace=True)
-    return df['temperature'].resample('D').mean().interpolate(method='time')
+    #df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
+    return df#['date'].resample('D').mean().interpolate(method='time')
 
 def analyze_data_properties(data):
     """
