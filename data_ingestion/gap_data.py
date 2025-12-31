@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # CONFIGURATION
-CSV_FILENAME = "abuja_gap_fill.csv"
+CSV_FILENAME = "abuja_gapp_fill.csv"
 CSV_FOLDER = "./we_csv_files"
 
 def get_db_engine():
@@ -45,7 +45,7 @@ def process_gap_data():
         
         # Add missing columns required by our DB
         clean_df['city'] = 'Abuja'
-        clean_df['source'] = 'visual_crossing' # Mark this so we know where it came from
+        clean_df['source'] = 'visual_crossing' # So we know where it came from
         clean_df['pm2_5'] = None # This data source doesn't have PM2.5, so leave null
         clean_df['pm10'] = None
         

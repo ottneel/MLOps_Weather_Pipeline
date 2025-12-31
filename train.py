@@ -27,11 +27,11 @@ def get_full_data():
         f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@"
         f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
     )
-    query = "SELECT timestamp, temperature FROM sensor_data WHERE temperature IS NOT NULL ORDER BY timestamp ASC"
+    query = "SELECT date, temp_avg FROM daily_weather WHERE temp_avg IS NOT NULL ORDER BY date ASC"
     df = pd.read_sql(query, engine)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df.set_index('timestamp', inplace=True)
-    return df['temperature'].resample('D').mean().interpolate(method='time')
+    #df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
+    return df#['date'].resample('D').mean().interpolate(method='time')
 
 def get_latest_params():
     """Finds the latest run from Validate.py and extracts parameters."""
@@ -59,7 +59,7 @@ def get_latest_params():
         seasonal = ast.literal_eval(latest_run.data.params['best_seasonal_order'])
         return order, seasonal
     except KeyError:
-        raise ValueError("Latest run is missing 'best_order' params. Did Script 1 fail?")
+        raise ValueError("Latest run is missing 'best_order' params.")
 
 def train_production():
     # 1. Get Params
