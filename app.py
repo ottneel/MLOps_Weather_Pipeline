@@ -25,7 +25,7 @@ def load_data():
     history_query = """
     SELECT date, temp_avg, humidity 
     FROM daily_weather
-    ORDER BY temp_avg DESC 
+    ORDER BY date DESC
     LIMIT 90
     """
     df_history = pd.read_sql(history_query, engine)
