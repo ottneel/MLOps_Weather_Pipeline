@@ -65,7 +65,7 @@ def analyze_data_properties(data):
     mlflow.log_param("is_data_stationary_raw", str(is_stationary))
 
     # 2. Seasonality Decomposition Plot
-    # We use period=7 because we suspect weekly patterns (or set to 365 for yearly if you have enough data)
+    # We use period = 365
     decomp = seasonal_decompose(data, model='additive', period=365)
     fig_decomp = decomp.plot()
     fig_decomp.set_size_inches(10, 8)
