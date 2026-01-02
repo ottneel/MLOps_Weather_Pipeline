@@ -4,7 +4,7 @@ import urllib.parse
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
-# 1. Load Environment Variables
+# Helps us to Load environment variables from the .env file to the environment.
 load_dotenv()
 
 def get_database_url():
@@ -19,20 +19,25 @@ def get_database_url():
         print("ERROR: Missing DB_USER, DB_PASS, or DB_NAME in .env file.")
         sys.exit(1)
 
-    # SAFETY FIX: Encode password to handle special chars like '@', '#'
+    # Encode password to handle special chars like '@', '#' So it doesn't break if there are special characters in the password.
     encoded_password = urllib.parse.quote_plus(password)
     return f"postgresql://{user}:{encoded_password}@{host}:{port}/{dbname}"
 
 def setup_db():
     print("Starting Database Setup...")
+    # we get the db url using the get_database_url function.
     db_url = get_database_url()
-    
+
+    # try and except block to prepare, connect to the database and Create the Necessary Tables.
+    # exit the script safely should an error happen.
     try:
+        # prepare to connect to the database
         engine = create_engine(db_url)
+        # connect to the database safely using a with clause for Resource Management.
         with engine.connect() as conn:
             print("Connected to Database.")
 
-            # --- TABLE 1: DAILY WEATHER ---
+            # Creating the daily_weather table
             print("Setting up 'daily_weather' table...")
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS daily_weather (
@@ -47,20 +52,20 @@ def setup_db():
                     pressure FLOAT,
                     cloudcover FLOAT,
                     source VARCHAR(50),
-                    -- IMPROVEMENT: Composite Key prevents duplicate city entries for same day
+                    -- Composite key using date and city
                     PRIMARY KEY (date, city)
                 );
             """))
 
-            # IMPROVEMENT: Index for fast lookups by Date and City
-            # (Crucial when querying "Get me the last 7 days of weather for London")
+            # Index for faster lookups by Date and City
+            # (Crucial when querying "Get me the last 7 days of weather for Abuja")
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_weather_date_city 
                 ON daily_weather (date DESC, city);
             """))
             print("Created 'daily_weather' with Indexes.")
 
-            # --- TABLE 2: DAILY FORECASTS
+            # Create Daily Forecast table to hold the predictions.
             conn.execute(text("DROP TABLE IF EXISTS daily_forecasts CASCADE;"))
             print("Setting up 'daily_forecasts' table...")
             conn.execute(text("""
@@ -70,7 +75,7 @@ def setup_db():
                     city VARCHAR(50) NOT NULL,
                     predicted_temp FLOAT,
                     model_version VARCHAR(50),
-                    -- IMPROVEMENT: Use TIMESTAMPTZ for audit trails
+                    -- Use TIMESTAMPTZ for audit trails for when I move storage to the cloud
                     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 );
             """))
@@ -82,6 +87,7 @@ def setup_db():
             """))
             print("Created 'daily_forecasts' with Indexes.")
 
+            #Saves the Changes Made to the dB
             conn.commit()
             print("\nSUCCESS: Database tables are ready and optimized!")
 
