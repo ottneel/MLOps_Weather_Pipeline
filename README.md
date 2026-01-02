@@ -17,29 +17,7 @@ This project demonstrates a complete MLOps lifecycle integrating:
 
 ## B. Data Architecture
 
-```mermaid
-graph TD
-    API[Visual Crossing API] -->|JSON Stream| Ingest[ingest.py]
-    CSV[Historical CSV] -->|Bulk Load| Load[load_history.py]
-    
-    subgraph "PostgreSQL Warehouse"
-        Load --> DB[(daily_weather)]
-        Ingest --> DB
-    end
-    
-    subgraph "MLOps Core"
-        DB -->|Train Data| Train[train.py]
-        Train -->|Log Params| MLflow
-        MLflow -->|Load Model| Predict[predict.py]
-    end
-    
-    subgraph "Serving Layer"
-        DB -->|Gap Data| Predict
-        Predict -->|Forecast| DB_Forecast[(daily_forecasts)]
-        DB_Forecast --> Streamlit
-        DB --> Streamlit
-    end
-```
+![Flowchart](images/autometroflowchart.png)
 
 ## C. Tools & Technologies
 
@@ -56,7 +34,6 @@ graph TD
 - [x] **Hybrid Data Engineering:** Merges static historical logs with real-time API streams into a single source of truth.
 - [x] **Stateful Inference:** Implements a "Rolling Update" mechanism (`refit=False`) to update model parameters daily without expensive full retraining.
 - [x] **Quality Gating:** The `validate.py` script acts as a barrier, preventing poor-performing models from reaching production by enforcing MAE thresholds.
-- [x] **Drift Handling:** Designed to adapt to Abuja’s distinct wet (Rainy) and dry (Harmattan) seasons.
 - [x] **Decoupled Architecture:** The dashboard reads from the database, not the inference script, ensuring zero downtime during model updates.
 
 ## E. Pipeline Workflow
@@ -79,8 +56,8 @@ Here is an overview of the sub-directories and files. Under the `MLOps_Weather_P
     * `ingest.py`: The script. Connects to Visual Crossing API, formats the JSON response, and upserts it into the DB.
 
 * **`models/`:**
-    * `train.py`: Runs the Auto-ARIMA search, logs metrics (AIC/BIC) to MLflow, and registers the best model version.
-    * `validate.py`: The Quality Assurance layer. It performs time-series cross-validation to calculate a realistic MAE before deployment.
+    * `train.py`: Trains the Model based on the parameters gotten from Validate.py script, logs Model to MLflow, and registers the model version.
+    * `validate.py`: The Quality Assurance layer. Runs Auto-Arima to chosse the best parameters. It also performs time-series cross-validation to calculate a realistic MAE before deployment.
 
 * **`deployment/`:**
     Handles Operations and Serving.
@@ -142,7 +119,7 @@ streamlit run deployment/app.py
 
 * **Dockerization:** Containerize the ingestion and inference scripts to ensure consistent environments across local and cloud deployments.
 * **CI/CD:** Implement GitHub Actions to automatically run the scripts without manual intervention.
-* **Advanced Modeling:** Experiment with **LSTM** (Long Short-Term Memory) networks or **Facebook Prophet** to better capture long-term seasonal trends.
+* **Advanced Modeling:** Experiment with **Fourier-ARIMA**,  **LSTM** (Long Short-Term Memory) networks or **Facebook Prophet** to better capture long-term seasonal trends.
 * **Alerting:** Integrate Email or Slack notifications to alert engineers immediately if the forecast MAE exceeds a specific safety threshold.
 
 * Read the Article: [Building an Autonomous MLOps Weather Engine (Abuja, Nigeria)](https://medium.com/@ottneel/building-an-autonomous-mlops-weather-engine-abuja-nigeria-ff8e27e11df3)
