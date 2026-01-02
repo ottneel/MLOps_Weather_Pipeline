@@ -24,7 +24,7 @@ def get_database_url():
     return f"postgresql://{user}:{encoded_password}@{host}:{port}/{dbname}"
 
 def setup_db():
-    print("--- Starting Database Setup ---")
+    print("Starting Database Setup...")
     db_url = get_database_url()
     
     try:
@@ -60,7 +60,8 @@ def setup_db():
             """))
             print("Created 'daily_weather' with Indexes.")
 
-            # --- TABLE 2: DAILY FORECASTS ---
+            # --- TABLE 2: DAILY FORECASTS
+            conn.execute(text("DROP TABLE IF EXISTS daily_forecasts CASCADE;"))
             print("Setting up 'daily_forecasts' table...")
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS daily_forecasts (
@@ -74,7 +75,7 @@ def setup_db():
                 );
             """))
 
-            # IMPROVEMENT: Index for comparing forecasts vs actuals efficiently
+            # Index for comparing forecasts vs actuals efficiently
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_forecast_lookup 
                 ON daily_forecasts (forecast_date, city);
