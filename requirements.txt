@@ -8,3 +8,5 @@ statsmodels
 mlflow
 scikit-learn
 pmdarima
+streamlit
+plotly

@@ -6,10 +6,16 @@ import pmdarima as pm
 from sklearn.metrics import mean_absolute_error
 from sqlalchemy import create_engine
 from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from dotenv import load_dotenv
 import os
 import matplotlib.pyplot as plt
 import warnings
+
+# Safety for server environments (prevents "no display name" errors)
+plt.switch_backend('Agg') 
 
 warnings.filterwarnings('ignore')
 load_dotenv()
@@ -27,11 +33,64 @@ def get_clean_data():
         f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
     )
     
-    query = "SELECT timestamp, temperature FROM sensor_data WHERE temperature IS NOT NULL ORDER BY timestamp ASC"
+    query = "SELECT date, temp_avg FROM daily_weather WHERE temp_avg IS NOT NULL ORDER BY date ASC"
     df = pd.read_sql(query, engine)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df.set_index('timestamp', inplace=True)
-    return df['temperature'].resample('D').mean().interpolate(method='time')
+    #df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
+    return df#['date'].resample('D').mean().interpolate(method='time')
+
+def analyze_data_properties(data):
+    """
+    Runs ADF test, plots Decomposition, ACF, and PACF.
+    Logs everything to MLflow.
+    """
+    print("Running Stationarity & Seasonality Analysis...")
+
+    # 1. Augmented Dickey-Fuller Test (ADF)
+    # H0: The time series is non-stationary.
+    # H1: The time series is stationary.
+    adf_result = adfuller(data.dropna())
+    
+    adf_stat = adf_result[0]
+    p_value = adf_result[1]
+    
+    print(f"ADF Statistic: {adf_stat}")
+    print(f"P-Value: {p_value}")
+    
+    mlflow.log_metric("adf_p_value", p_value)
+    mlflow.log_metric("adf_statistic", adf_stat)
+    
+    # Interpretation: If p > 0.05, we fail to reject H0 (It IS Non-Stationary)
+    is_stationary = p_value < 0.05
+    mlflow.log_param("is_data_stationary_raw", str(is_stationary))
+
+    # 2. Seasonality Decomposition Plot
+    # We use period = 365
+    decomp = seasonal_decompose(data, model='additive', period=365)
+    fig_decomp = decomp.plot()
+    fig_decomp.set_size_inches(10, 8)
+    plt.tight_layout()
+    plt.savefig("seasonality_decomposition.png")
+    mlflow.log_artifact("seasonality_decomposition.png")
+    plt.close(fig_decomp)
+
+    # 3. ACF and PACF Plots
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+    
+    plot_acf(data, ax=ax1, lags=40)
+    ax1.set_title("Autocorrelation Function (ACF)")
+    
+    plot_pacf(data, ax=ax2, lags=40)
+    ax2.set_title("Partial Autocorrelation Function (PACF)")
+    
+    plt.tight_layout()
+    plt.savefig("acf_pacf_plots.png")
+    mlflow.log_artifact("acf_pacf_plots.png")
+    plt.close(fig)
+    
+    # Cleanup local files
+    if os.path.exists("seasonality_decomposition.png"): os.remove("seasonality_decomposition.png")
+    if os.path.exists("acf_pacf_plots.png"): os.remove("acf_pacf_plots.png")
 
 def evaluate_params(train_data, test_data, order, seasonal_order, name):
     """Trains on 'Past', Validates on 'Future' (Test Set). Returns MAE."""
@@ -71,6 +130,11 @@ def evaluate():
     
     with mlflow.start_run(run_name="Current_vs_New"):
         
+        # --- NEW STEP: Analyze Data Properties before Modeling ---
+        # We only look at Train Data to avoid Data Leakage (peeking at the test set)
+        analyze_data_properties(train_data)
+        # ---------------------------------------------------------
+
         # 1. Current Production Model
         current_mae = float('inf')
         current_order = None

@@ -1,75 +1,99 @@
 import os
 import sys
+import urllib.parse
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
-# load the .env file
+# Helps us to Load environment variables from the .env file to the environment.
 load_dotenv()
 
-# Get variables with safety checks
-user = os.getenv('DB_USER')
-password = os.getenv('DB_PASS')
-host = os.getenv('DB_HOST', 'localhost')
-port = os.getenv('DB_PORT', '5432')
-dbname = os.getenv('DB_NAME')
+def get_database_url():
+    """Constructs the database URL safely, handling special characters."""
+    user = os.getenv('DB_USER')
+    password = os.getenv('DB_PASS')
+    host = os.getenv('DB_HOST', 'localhost')
+    port = os.getenv('DB_PORT', '5432')
+    dbname = os.getenv('DB_NAME')
 
-# Validation: Stop everything if secrets are missing
-if not user or not password or not dbname:
-    print("ERROR: One or more required environment variables are missing.")
-    print(f"Detected: User={user}, DB={dbname} (Password hidden)")
-    print("Please check your .env file.")
-    sys.exit(1) # Exit the script with an error code
+    if not all([user, password, dbname]):
+        print("ERROR: Missing DB_USER, DB_PASS, or DB_NAME in .env file.")
+        sys.exit(1)
 
+    # Encode password to handle special chars like '@', '#' So it doesn't break if there are special characters in the password.
+    encoded_password = urllib.parse.quote_plus(password)
+    return f"postgresql://{user}:{encoded_password}@{host}:{port}/{dbname}"
 
-# Connection Parameters & Port Fallback
-print(f" Connecting as USER={user} on PORT={port} to DB={dbname}")
+def setup_db():
+    print("Starting Database Setup...")
+    # we get the db url using the get_database_url function.
+    db_url = get_database_url()
 
-if port is None or port == 'None':
-    print("CRITICAL ERROR: DB_PORT is still None. Hardcoding to 5432.")
-    port = '5432'
+    # try and except block to prepare, connect to the database and Create the Necessary Tables.
+    # exit the script safely should an error happen.
+    try:
+        # prepare to connect to the database
+        engine = create_engine(db_url)
+        # connect to the database safely using a with clause for Resource Management.
+        with engine.connect() as conn:
+            print("Connected to Database.")
 
-# Connect
-try:
-    connection_string = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
-    engine = create_engine(connection_string)
-    
-    with engine.connect() as conn:
-        print("Connected! Setting up tables...")
+            # Creating the daily_weather table
+            print("Setting up 'daily_weather' table...")
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS daily_weather (
+                    date DATE NOT NULL,
+                    city VARCHAR(50) NOT NULL,
+                    temp_avg FLOAT,
+                    temp_max FLOAT,
+                    temp_min FLOAT,
+                    humidity FLOAT,
+                    precip FLOAT,
+                    windspeed FLOAT,
+                    pressure FLOAT,
+                    cloudcover FLOAT,
+                    source VARCHAR(50),
+                    -- Composite key using date and city
+                    PRIMARY KEY (date, city)
+                );
+            """))
 
-        # 1. Drop the old weak table 
-        conn.execute(text("DROP TABLE IF EXISTS temperature;"))
-        print("Dropped old 'temperature' table.")
+            # Index for faster lookups by Date and City
+            # (Crucial when querying "Get me the last 7 days of weather for Abuja")
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_weather_date_city 
+                ON daily_weather (date DESC, city);
+            """))
+            print("Created 'daily_weather' with Indexes.")
 
-        # 2. Create the new table 
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS sensor_data (
-                timestamp TIMESTAMP,
-                city VARCHAR(50),
-                temperature FLOAT,
-                humidity FLOAT,
-                pm2_5 FLOAT,   -- For "P2" (Air Quality)
-                pm10 FLOAT,    -- For "P1"
-                source VARCHAR(20), -- To track if it came from "csv_history" or "api"
-                PRIMARY KEY (timestamp, city)
-            );
-        """))
-        print("Created 'sensor_data' table.")
+            # Create Daily Forecast table to hold the predictions.
+            conn.execute(text("DROP TABLE IF EXISTS daily_forecasts CASCADE;"))
+            print("Setting up 'daily_forecasts' table...")
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS daily_forecasts (
+                    id SERIAL PRIMARY KEY,
+                    forecast_date DATE NOT NULL,
+                    city VARCHAR(50) NOT NULL,
+                    predicted_temp FLOAT,
+                    model_version VARCHAR(50),
+                    -- Use TIMESTAMPTZ for audit trails for when I move storage to the cloud
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
 
-        # 3. Create the Predictions Table
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS daily_forecasts (
-                id SERIAL PRIMARY KEY,
-                forecast_date DATE,
-                predicted_temperature FLOAT,
-                model_version VARCHAR(50),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """))
-        print("Created 'daily_forecasts' table.")
+            # Index for comparing forecasts vs actuals efficiently
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_forecast_lookup 
+                ON daily_forecasts (forecast_date, city);
+            """))
+            print("Created 'daily_forecasts' with Indexes.")
 
-        conn.commit() 
-        # Save changes
-        print(" SUCCESS: All database tables are ready!")
+            #Saves the Changes Made to the dB
+            conn.commit()
+            print("\nSUCCESS: Database tables are ready and optimized!")
 
-except Exception as e:
-    print(f"\n CONNECTION FAILED: {e}")
+    except Exception as e:
+        print(f"\nCRITICAL ERROR: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    setup_db()

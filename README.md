@@ -1,14 +1,14 @@
 # Abuja MLOps Weather Pipeline
 
-An end-to-end autonomous weather forecasting engine that ingests live sensor data, re-calibrates its internal state using rolling-window updates, and serves a 3-day temperature forecast via a Streamlit dashboard. The pipeline leverages a database-centric architecture to seperate training from inference, ensuring high availability and drift adaptability.
+An end-to-end autonomous weather forecasting engine that ingests live sensor data, re-calibrates its internal state using rolling-window updates, and serves a 3-day temperature forecast via a Streamlit dashboard. The pipeline leverages a database-centric architecture to separate training from inference, ensuring high availability and drift adaptability.
 
 > **Note (v1.0 Scope):** This initial release focuses exclusively on **Temperature Forecasting** as the foundational metric. The architecture is designed to scale easily to Humidity and Precipitation in future updates.
 
 ## A. Project Overview
 
 This project demonstrates a complete MLOps lifecycle integrating:
-- **Sensor Data** Historic data collected from ([OpenAfrica](https://open.africa/dataset/sensorsafrica-airquality-archive-abuja)) for Abuja
-- **OpenWeatherMap API** for real-time data extraction
+- **Sensor Data** Historic data collected from [Visual Crossing](https://www.visualcrossing.com/weather-query-builder/abuja/?v=wizard) for Abuja
+- **Visual Crossing Weather API** for real-time data extraction
 - **PostgreSQL** for centralized data warehousing and state management
 - **Auto-ARIMA** for seasonality detection ($m=7$) and trend analysis
 - **MLflow** for experiment tracking and model registry
@@ -17,13 +17,35 @@ This project demonstrates a complete MLOps lifecycle integrating:
 
 ## B. Data Architecture
 
-![Architecture Diagram](images/weather_flowchart.png)
+```mermaid
+graph TD
+    API[Visual Crossing API] -->|JSON Stream| Ingest[ingest.py]
+    CSV[Historical CSV] -->|Bulk Load| Load[load_history.py]
+    
+    subgraph "PostgreSQL Warehouse"
+        Load --> DB[(daily_weather)]
+        Ingest --> DB
+    end
+    
+    subgraph "MLOps Core"
+        DB -->|Train Data| Train[train.py]
+        Train -->|Log Params| MLflow
+        MLflow -->|Load Model| Predict[predict.py]
+    end
+    
+    subgraph "Serving Layer"
+        DB -->|Gap Data| Predict
+        Predict -->|Forecast| DB_Forecast[(daily_forecasts)]
+        DB_Forecast --> Streamlit
+        DB --> Streamlit
+    end
+```
 
 ## C. Tools & Technologies
 
 | Layer | Tools |
 | :--- | :--- |
-| **Ingestion** | Python (Requests, Pandas), OpenWeatherMap API |
+| **Ingestion** | Python (Requests, Pandas), Visual Crossing API |
 | **Storage** | PostgreSQL, CSV (Historical Logs) |
 | **Processing** | Statsmodels (ARIMA), Scikit-Learn |
 | **Tracking** | MLflow |
@@ -52,9 +74,9 @@ Here is an overview of the sub-directories and files. Under the `MLOps_Weather_P
 
 * **`Data ingestion/` Directory:**
     Handles the "Extract" and "Load" phases of the pipeline.
-    * `setup_db.py`: Initializes the PostgreSQL schema and creates necessary tables.
+    * `setup_db.py`: Initializes the PostgreSQL schema, creating optimized tables with composite primary keys and indexes for fast query performance.
     * `load_history.py`: Bulk loads the historical CSV dataset to seed the database.
-    * `ingest.py`: The script. Connects to OpenWeatherMap API, formats the JSON response, and upserts it into the DB.
+    * `ingest.py`: The script. Connects to Visual Crossing API, formats the JSON response, and upserts it into the DB.
 
 * **`models/`:**
     * `train.py`: Runs the Auto-ARIMA search, logs metrics (AIC/BIC) to MLflow, and registers the best model version.
@@ -71,7 +93,7 @@ Here is an overview of the sub-directories and files. Under the `MLOps_Weather_P
 
 ## G. Setup Instructions
 
-**Ensure you have PostgreSQL installed and an OpenWeatherMap API Key.**
+**Ensure you have PostgreSQL installed and an Visual Crossing API Key.**
 
 ### 1. Clone the repo
 ```
@@ -93,9 +115,13 @@ pip install -r requirements.txt
 ### 4. Configure Environment
 ```
 Create a .env file in the root directory:
-DB_URI=postgresql://user:password@localhost:5432/weather_db
-OPENWEATHER_API_KEY=your_api_key
-MLFLOW_TRACKING_URI=sqlite:///mlflow.db
+DB_USER=postgres
+DB_PASS=yourpassword
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=abuja_air_quality
+VISUAL_CROSSING_API_KEY=your_api_key
+MLFLOW_TRACKING_URI=./mlruns
 ```
 
 ### 5. Initialize the Pipeline

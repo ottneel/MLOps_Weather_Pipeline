@@ -23,18 +23,18 @@ def load_data():
     
     # A. Get Historical Data (Last 90 days only, to keep graph clean)
     history_query = """
-    SELECT timestamp, temperature, humidity 
-    FROM sensor_data 
-    ORDER BY timestamp DESC 
+    SELECT date, temp_avg, humidity 
+    FROM daily_weather
+    ORDER BY date DESC
     LIMIT 90
     """
     df_history = pd.read_sql(history_query, engine)
-    df_history['timestamp'] = pd.to_datetime(df_history['timestamp'])
+    df_history['date'] = pd.to_datetime(df_history['date'])
     
     # B. Get Latest Forecast
     # We only want the *most recent* batch of predictions made
     forecast_query = """
-    SELECT forecast_date, predicted_temperature 
+    SELECT forecast_date, predicted_temp
     FROM daily_forecasts 
     WHERE created_at = (SELECT MAX(created_at) FROM daily_forecasts)
     ORDER BY forecast_date ASC
@@ -55,13 +55,13 @@ try:
     col1, col2, col3 = st.columns(3)
     
     # Latest actual reading
-    current_temp = df_history.iloc[0]['temperature']
-    current_time = df_history.iloc[0]['timestamp'].strftime('%Y-%m-%d')
+    current_temp = df_history.iloc[0]['temp_avg']
+    current_time = df_history.iloc[0]['date'].strftime('%Y-%m-%d')
     
     col1.metric("Today's Temperature", f"{current_temp:.1f}°C", current_time)
     
     # Next predicted day
-    next_pred = df_forecast.iloc[0]['predicted_temperature']
+    next_pred = df_forecast.iloc[0]['predicted_temp']
     col2.metric("Tomorrow's Forecast", f"{next_pred:.1f}°C")
     
     # Model Status
@@ -74,8 +74,8 @@ try:
 
     # Plot History (Blue Line)
     fig.add_trace(go.Scatter(
-        x=df_history['timestamp'], 
-        y=df_history['temperature'],
+        x=df_history['date'], 
+        y=df_history['temp_avg'],
         mode='lines',
         name='Historical Data',
         line=dict(color='deepskyblue', width=2)
@@ -84,7 +84,7 @@ try:
     # Plot Forecast (Red Dotted Line)
     fig.add_trace(go.Scatter(
         x=df_forecast['forecast_date'], 
-        y=df_forecast['predicted_temperature'],
+        y=df_forecast['predicted_temp'],
         mode='lines+markers',
         name='Forecast',
         line=dict(color='firebrick', width=2, dash='dash')
