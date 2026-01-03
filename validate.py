@@ -130,10 +130,10 @@ def evaluate():
     
     with mlflow.start_run(run_name="Current_vs_New"):
         
-        # --- NEW STEP: Analyze Data Properties before Modeling ---
+        # Analyze Data Properties before Modeling ---
         # We only look at Train Data to avoid Data Leakage (peeking at the test set)
         analyze_data_properties(train_data)
-        # ---------------------------------------------------------
+
 
         # 1. Current Production Model
         current_mae = float('inf')
@@ -161,12 +161,7 @@ def evaluate():
 
         # 3. THE SELECTION DECISION
         # New Parameters must improve by at least 0.05 MAE to replace Current
-        improvement_threshold = 0.05
-        
-        if current_mae == float('inf'):
-            winner = "New (Default)"
-            w_order, w_seasonal, w_mae, w_preds = auto.order, auto.seasonal_order, new_mae, new_preds
-        elif new_mae < (current_mae - improvement_threshold):
+        if new_mae < current_mae:
             winner = "New (New Params)"
             w_order, w_seasonal, w_mae, w_preds = auto.order, auto.seasonal_order, new_mae, new_preds
         else:
@@ -193,7 +188,7 @@ def evaluate():
             mlflow.log_param("quality_check", "FAILED")
             mlflow.log_metric("check_mae", check_mae)
             
-            error_msg = f"CRITICAL: Deployment Halted. Recent MAE ({check_mae:.2f}) > 2.0."
+            error_msg = f"Deployment Halted. Recent MAE ({check_mae:.2f}) > 2.0."
             print(f"{error_msg}")
             
             # Raise error to stop CI/CD pipeline with a non-zero exit code
@@ -205,7 +200,7 @@ def evaluate():
 
         # 5. LOG RESULTS (Only happens if Check Passes)
         mlflow.log_param("winner", winner)
-        # CRITICAL: Log these as strings so Training Script can read them
+        # Log these as strings so Training Script can read them
         mlflow.log_param("best_order", str(w_order))
         mlflow.log_param("best_seasonal_order", str(w_seasonal))
         mlflow.log_metric("val_mae", w_mae)
