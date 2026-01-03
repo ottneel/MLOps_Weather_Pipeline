@@ -52,22 +52,26 @@ try:
     st.markdown("### Temperature Forecast")
 
     # KPI Metrics Row
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     # Latest actual reading
     current_temp = df_history.iloc[0]['temp_avg']
     current_time = df_history.iloc[0]['date'].strftime('%Y-%m-%d')
     
-    col1.metric("Today's Temperature", f"{current_temp:.1f}°C", current_time)
+    col1.metric("Yesterday's Temperature", f"{current_temp:.1f}°C", current_time)
     
     # Next predicted day
     next_pred = df_forecast.iloc[0]['predicted_temp']
-    col2.metric("Tomorrow's Forecast", f"{next_pred:.1f}°C")
+    col2.metric("Today's Forecast", f"{next_pred:.3f}°C")
+
+    # Next predicted day
+    next_pred = df_forecast.iloc[1]['predicted_temp']
+    col3.metric("Tomorrow's Forecast", f"{next_pred:.3f}°C")
     
     # Model Status
-    col3.metric("Model Status", "Active")
+    col4.metric("Model Status", "Active")
 
-    # --- MAIN CHART (The "Wow" Factor) ---
+    # MAIN CHART
     st.subheader("Temperature Trend: History vs. Prediction")
     
     fig = go.Figure()
