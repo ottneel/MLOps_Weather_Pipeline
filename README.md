@@ -104,11 +104,11 @@ MLFLOW_TRACKING_URI=./mlruns
 ### 5. Initialize the Pipeline
 ```
 # Setup DB and load history
-python ingestion/setup_db.py
-python ingestion/load_history.py
+python data_ingestion/setup_db.py
+python data_ingestion/load_history.py
 
 # Fetch first batch of live data
-python ingestion/ingest.py
+python data_ingestion/ingest.py
 
 ```
 ### 6. Run the Dashboard
