@@ -10,7 +10,8 @@ import ast
 import warnings
 
 warnings.filterwarnings('ignore')
-load_dotenv()
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(override=True)
 
 # CONFIGURATION
 VALIDATION_EXP_NAME = "Abuja_Temp_Validation"

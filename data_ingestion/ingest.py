@@ -6,7 +6,8 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(override=True)
 
 # Configuration
 VC_API_KEY = os.getenv("VISUAL_CROSSING_API_KEY")

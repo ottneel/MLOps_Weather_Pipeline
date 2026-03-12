@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 
 # 1. Config & Setup
 st.set_page_config(page_title="Abuja Weather Forecast", layout="wide")
-load_dotenv()
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(override=True)
 
 # 2. Database Connection
 def get_db_connection():

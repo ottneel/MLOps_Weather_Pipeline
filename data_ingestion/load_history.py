@@ -6,7 +6,8 @@ from sqlalchemy import create_engine, MetaData, Table, text
 from sqlalchemy.dialects.postgresql import insert
 from dotenv import load_dotenv
 
-load_dotenv()
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(override=True)
 
 # --- CONFIGURATION ---
 CSV_FILENAME = "abuja_gapp_fill.csv"
@@ -118,7 +119,7 @@ def load_history():
             'sealevelpressure': 'pressure'
         })
         
-        clean_df['date'] = pd.to_datetime(clean_df['date']).dt.date
+        clean_df['date'] = pd.to_datetime(clean_df['date'], format='mixed',dayfirst=True).dt.date
         clean_df['precip'] = clean_df['precip'].fillna(0.0)
         clean_df['city'] = 'Abuja'
         clean_df['source'] = 'visual_crossing_csv'

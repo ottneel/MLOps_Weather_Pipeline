@@ -5,7 +5,8 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 # Helps us to Load environment variables from the .env file to the environment.
-load_dotenv()
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(override=True)
 
 def get_database_url():
     """Constructs the database URL safely, handling special characters."""
@@ -14,6 +15,8 @@ def get_database_url():
     host = os.getenv('DB_HOST', 'localhost')
     port = os.getenv('DB_PORT', '5432')
     dbname = os.getenv('DB_NAME')
+
+    print(f"DEBUG: Trying to connect with User: {user}, DB: {dbname}")
 
     if not all([user, password, dbname]):
         print("ERROR: Missing DB_USER, DB_PASS, or DB_NAME in .env file.")

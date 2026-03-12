@@ -18,7 +18,9 @@ import warnings
 plt.switch_backend('Agg') 
 
 warnings.filterwarnings('ignore')
-load_dotenv()
+# Force dotenv to override existing variables
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(override=True)
 
 # CONFIGURATION
 EXPERIMENT_NAME = "Abuja_Temp_Validation"
