@@ -92,7 +92,7 @@ pip install -r requirements.txt
 ### 4. Configure Environment
 ```
 Create a .env file in the root directory:
-DB_USER=postgres
+DB_USER=roots
 DB_PASS=yourpassword
 DB_HOST=localhost
 DB_PORT=5432
@@ -111,7 +111,23 @@ python data_ingestion/load_history.py
 python data_ingestion/ingest.py
 
 ```
-### 6. Run the Dashboard
+### 6. Run the Validate script
+```
+# This script is to find the ideal Parameters to run the Sarima model
+python Validate.py
+```
+
+### 7. Train the Model
+```
+# this script uses the Parameters gotten from the validate.py scrpit to train the model.
+python Train.py
+```
+### 8. Generate Predictions
+```
+# This Script is used to generate predictions for the next 3 days.
+python Predict.py
+```
+### 9. Run the Dashboard
 ```
 streamlit run deployment/app.py
 ```
