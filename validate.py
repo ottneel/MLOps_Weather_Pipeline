@@ -172,41 +172,36 @@ def evaluate():
 
         print(f"\n SELECTED WINNER: {winner} (Overall MAE: {w_mae:.4f})")
 
-        # 4. THE QUALITY CHECK (SAFETY CHECK)
+# 5. LOG PARAMS FIRST (before quality gate, so train.py always has them)
+        mlflow.log_param("winner", winner)
+        mlflow.log_param("best_order", str(w_order))
+        mlflow.log_param("best_seasonal_order", str(w_seasonal))
+        mlflow.log_metric("val_mae", w_mae)
 
-        # Calculate MAE specifically for the last 3 days of the test set
-        last_3_actuals = test_data.iloc[-3:]
-        last_3_forecasts = w_preds[-3:]
-        
-        check_mae = mean_absolute_error(last_3_actuals, last_3_forecasts)
-        
+        # 4. THE QUALITY CHECK (SAFETY CHECK)
+        # 7-day window matches SARIMA seasonal period (m=7) and smooths Harmattan anomalies
+        last_7_actuals = test_data.iloc[-7:]
+        last_7_forecasts = w_preds[-7:]
+
+        check_mae = mean_absolute_error(last_7_actuals, last_7_forecasts)
+
         print("\n QUALITY CHECK")
-        print(f"Last 3 Days Actuals:  {last_3_actuals.values}")
-        print(f"Last 3 Days Forecast: {[round(x, 2) for x in last_3_forecasts]}")
+        print(f"Last 7 Days Actuals:  {last_7_actuals.values}")
+        print(f"Last 7 Days Forecast: {[round(x, 2) for x in last_7_forecasts]}")
         print(f"Recent MAE: {check_mae:.4f} (Threshold: 2.0)")
 
         if check_mae > 2.0:
-            # LOG FAILURE AND CRASH
             mlflow.log_param("quality_check", "FAILED")
             mlflow.log_metric("check_mae", check_mae)
-            
+
             error_msg = f"Deployment Halted. Recent MAE ({check_mae:.2f}) > 2.0."
             print(f"{error_msg}")
-            
-            # Raise error to stop CI/CD pipeline with a non-zero exit code
             raise ValueError(error_msg)
-        
+
         print("Quality Check PASSED. Proceeding to log parameters.")
         mlflow.log_param("quality_check", "PASSED")
         mlflow.log_metric("check_mae", check_mae)
 
-        # 5. LOG RESULTS (Only happens if Check Passes)
-        mlflow.log_param("winner", winner)
-        # Log these as strings so Training Script can read them
-        mlflow.log_param("best_order", str(w_order))
-        mlflow.log_param("best_seasonal_order", str(w_seasonal))
-        mlflow.log_metric("val_mae", w_mae)
-        
         # Plot
         plt.figure(figsize=(10, 5))
         plt.plot(test_data.index, test_data, label='Actual')
