@@ -162,6 +162,8 @@ To explore training metrics, parameters, and registered models visually:
 
 ```bash
 mlflow ui
+# or
+python -m mlflow ui
 ```
 
 Then open [http://localhost:5000](http://localhost:5000) in your browser. You will see a logged run under the experiment name defined in `train.py`.
@@ -191,7 +193,9 @@ Forecast written to database:
 ## Step 10 — Launch the Dashboard
 
 ```bash
-streamlit run deployment/app.py
+streamlit run app.py
+# or
+python -m streamlit run app.py
 ```
 
 Streamlit will automatically open the dashboard in your browser at [http://localhost:8501](http://localhost:8501). The dashboard reads forecast and actuals data directly from PostgreSQL and renders an interactive Plotly chart.
