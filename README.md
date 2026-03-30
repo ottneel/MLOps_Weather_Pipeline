@@ -1,141 +1,211 @@
-# Abuja MLOps Weather Pipeline
+# G. Setup Instructions
 
-An end-to-end autonomous weather forecasting engine that ingests live sensor data, re-calibrates its internal state using rolling-window updates, and serves a 3-day temperature forecast via a Streamlit dashboard. The pipeline leverages a database-centric architecture to separate training from inference, ensuring high availability and drift adaptability.
+---
 
-> **Note (v1.0 Scope):** This initial release focuses exclusively on **Temperature Forecasting** as the foundational metric. The architecture is designed to scale easily to Humidity and Precipitation in future updates.
+## Prerequisites
 
-## A. Project Overview
+Before cloning the repository, ensure the following are installed and meet the minimum version requirements:
 
-This project demonstrates a complete MLOps lifecycle integrating:
-- **Sensor Data** Historic data collected from [Visual Crossing](https://www.visualcrossing.com/weather-query-builder/abuja/?v=wizard) for Abuja
-- **Visual Crossing Weather API** for real-time data extraction
-- **PostgreSQL** for centralized data warehousing and state management
-- **Auto-ARIMA** for seasonality detection ($m=7$) and trend analysis
-- **MLflow** for experiment tracking and model registry
-- **Walk-Forward Validation** for rigorous backtesting against local micro-climates
-- **Streamlit** for user-facing visualization
+| Dependency | Minimum Version | Notes |
+| :--- | :--- | :--- |
+| **Python** | 3.9+ | [Download](https://www.python.org/downloads/) |
+| **PostgreSQL** | 14+ | [Download](https://www.postgresql.org/download/) |
+| **Docker & Docker Compose** | Docker 24+ / Compose v2+ | Required to run the PostgreSQL container |
+| **MLflow** | Installed via `requirements.txt` | Run `mlflow ui` separately to view experiment results |
 
-## B. Data Architecture
+> **Visual Crossing API Key:** You will need a free API key from [Visual Crossing](https://www.visualcrossing.com/sign-up). After signing up, your key is available under **Account > Key**.
 
-![Flowchart](images/autometroflowchart.png)
+---
 
-## C. Tools & Technologies
+## Step 1 — Clone the Repository
 
-| Layer | Tools |
-| :--- | :--- |
-| **Ingestion** | Python (Requests, Pandas), Visual Crossing API |
-| **Storage** | PostgreSQL, CSV (Historical Logs) |
-| **Processing** | Statsmodels (ARIMA), Scikit-Learn |
-| **Tracking** | MLflow |
-| **Serving** | Streamlit, Plotly |
-
-## D. Features
-
-- [x] **Hybrid Data Engineering:** Merges static historical logs with real-time API streams into a single source of truth.
-- [x] **Stateful Inference:** Implements a "Rolling Update" mechanism (`refit=False`) to update model parameters daily without expensive full retraining.
-- [x] **Quality Gating:** The `validate.py` script acts as a barrier, preventing poor-performing models from reaching production by enforcing MAE thresholds.
-- [x] **Decoupled Architecture:** The dashboard reads from the database, not the inference script, ensuring zero downtime during model updates.
-
-## E. Pipeline Workflow
-
-1.  **Ingest** real-time weather metrics via `ingest.py`.
-2.  **Store** raw data into the PostgreSQL warehouse.
-3.  **Train** the core model using Auto-ARIMA to identify parameters ($p,d,q$).
-4.  **Validate** the model using Walk-Forward Cross-Validation.
-5.  **Predict** the next 3 days by feeding "gap data" into the frozen model state.
-6.  **Serve** the predictions via Streamlit, comparing them against live actuals.
-
-## F. Project Folder Structure and Files Description
-
-Here is an overview of the sub-directories and files. Under the `MLOps_Weather_Pipeline` main folder, we have:
-
-* **`Data ingestion/` Directory:**
-    Handles the "Extract" and "Load" phases of the pipeline.
-    * `setup_db.py`: Initializes the PostgreSQL schema, creating optimized tables with composite primary keys and indexes for fast query performance.
-    * `load_history.py`: Bulk loads the historical CSV dataset to seed the database.
-    * `ingest.py`: The script. Connects to Visual Crossing API, formats the JSON response, and upserts it into the DB.
-
-* **`models/`:**
-    * `train.py`: Trains the Model based on the parameters gotten from Validate.py script, logs Model to MLflow, and registers the model version.
-    * `validate.py`: The Quality Assurance layer. Runs Auto-Arima to chosse the best parameters. It also performs time-series cross-validation to calculate a realistic MAE before deployment.
-
-* **`deployment/`:**
-    Handles Operations and Serving.
-    * `predict.py`: The inference engine. It loads the model from MLflow, fetches recent "gap data" from the DB, updates the model state, and writes the 3-day forecast back to the DB.
-    * `app.py`: The user interface. A Streamlit dashboard that visualizes the forecast vs. actuals reading directly from PostgreSQL.
-
-* **`images/` Directory:**
-    Stores images and architecture diagrams for documentation.
-
-
-## G. Setup Instructions
-
-**Ensure you have PostgreSQL installed and an Visual Crossing API Key.**
-
-### 1. Clone the repo
-```
+```bash
 git clone https://github.com/ottneel/MLOps_Weather_Pipeline.git
 cd MLOps_Weather_Pipeline
 ```
 
-### 2. Set up Python virtual environment
-```
+---
+
+## Step 2 — Set Up Python Virtual Environment
+
+```bash
 python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
+
+# macOS / Linux
+source venv/bin/activate
+
+# Windows
+venv\Scripts\activate
 ```
 
-### 3. Install dependencies
-```
+---
+
+## Step 3 — Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment
-```
-Create a .env file in the root directory:
-DB_USER=roots
-DB_PASS=yourpassword
+> **Note:** `requirements.txt` includes `python-dotenv`, which is required for loading environment variables from the `.env` file. If you encounter `ModuleNotFoundError: No module named 'dotenv'`, run `pip install python-dotenv` manually.
+
+---
+
+## Step 4 — Configure Environment Variables
+
+Create a `.env` file in the **root** of the project directory with the following contents:
+
+```env
+DB_USER=your_db_username
+DB_PASS=your_db_password
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=abuja_air_quality
-VISUAL_CROSSING_API_KEY=your_api_key
+VISUAL_CROSSING_API_KEY=your_api_key_here
 MLFLOW_TRACKING_URI=./mlruns
 ```
 
-### 5. Initialize the Pipeline
+> **Tip:** Replace `your_db_username` and `your_db_password` with the credentials configured in `docker-compose.yml`. Do not commit the `.env` file to version control — it is already listed in `.gitignore`.
+
+---
+
+## Step 5 — Start the PostgreSQL Container
+
+The project uses Docker Compose to run a managed PostgreSQL instance. From the root directory, run:
+
+```bash
+docker compose up -d
 ```
-# Setup DB and load history
+
+**Expected output:**
+```
+✔ Container air_quality_db       Started                                                              
+✔ Container air_quality_pgadmin  Started
+```
+
+To confirm the container is running:
+```bash
+docker ps
+```
+You should see a container named `mlops_weather_pipeline-db-1` (or similar) with status `Up`.
+
+---
+
+## Step 6 — Initialize the Database and Load Historical Data
+
+```bash
+# Create the database schema (tables, indexes, composite primary keys)
 python data_ingestion/setup_db.py
+
+# Seed the database with the historical CSV dataset
 python data_ingestion/load_history.py
+```
 
-# Fetch first batch of live data
+**Expected output from `load_history.py`:**
+```
+[Verification] Total rows in 'daily_weather': ****
+```
+
+Then fetch the first batch of live data from the Visual Crossing API:
+
+```bash
 python data_ingestion/ingest.py
-
-```
-### 6. Run the Validate script
-```
-# This script is to find the ideal Parameters to run the Sarima model
-python Validate.py
 ```
 
-### 7. Train the Model
+**Expected output:**
 ```
-# this script uses the Parameters gotten from the validate.py scrpit to train the model.
-python Train.py
+Fetched data for YYYY-MM-DD. Upserted N records.
 ```
-### 8. Generate Predictions
+
+> **API Troubleshooting:** If you see a `401 Unauthorized` error, double-check that your `VISUAL_CROSSING_API_KEY` in `.env` is correct and has not exceeded the free tier's daily call limit (1,000 records/day).
+
+---
+
+## Step 7 — Run the Validation Script (Parameter Selection)
+
+The `validate.py` script runs Auto-ARIMA to identify the optimal `(p, d, q)` parameters and performs Walk-Forward Cross-Validation to calculate a realistic MAE before any model is trained.
+
+```bash
+python validate.py
 ```
-# This Script is used to generate predictions for the next 3 days.
-python Predict.py
+
+**Expected output:**
 ```
-### 9. Run the Dashboard
+Best ARIMA parameters: (p=..., d=..., q=...)
+Walk-Forward MAE: X.XX °C
+Model passed quality gate. Safe to proceed with training.
+or
+Deployment Halted. Recent MAE (***) > current.
 ```
+
+> If MAE exceeds the defined threshold, training will be blocked. This is expected behaviour — it means the quality gate is working. Check data completeness and re-run `ingest.py` if needed.
+
+---
+
+## Step 8 — Train the Model
+
+The `train.py` script uses the parameters surfaced by `validate.py`, trains the SARIMA model, and registers it in the MLflow Model Registry.
+
+```bash
+python train.py
+```
+
+**Expected output:**
+```
+Training model with params (p=..., d=..., q=...)...
+Logged run to MLflow: run_id=XXXXXXXXXXXXXX
+Registered model version: v1
+```
+
+### Viewing Experiment Results in MLflow (Optional but Recommended)
+
+To explore training metrics, parameters, and registered models visually:
+
+```bash
+mlflow ui
+```
+
+Then open [http://localhost:5000](http://localhost:5000) in your browser. You will see a logged run under the experiment name defined in `train.py`.
+
+---
+
+## Step 9 — Generate Predictions
+
+The `predict.py` script loads the trained model from the MLflow registry, fetches the latest "gap data" from the database, updates the model state, and writes the 3-day forecast back to PostgreSQL.
+
+```bash
+python deployment/predict.py
+```
+
+**Expected output:**
+```
+Loaded model version v1 from MLflow registry.
+Fetched N days of gap data from DB.
+Forecast written to database:
+  Day 1 (YYYY-MM-DD): XX.X °C
+  Day 2 (YYYY-MM-DD): XX.X °C
+  Day 3 (YYYY-MM-DD): XX.X °C
+```
+
+---
+
+## Step 10 — Launch the Dashboard
+
+```bash
 streamlit run deployment/app.py
 ```
-## H. Future Improvements
 
-* **Dockerization:** Containerize the ingestion and inference scripts to ensure consistent environments across local and cloud deployments.
-* **CI/CD:** Implement GitHub Actions to automatically run the scripts without manual intervention.
-* **Advanced Modeling:** Experiment with **Fourier-ARIMA**,  **LSTM** (Long Short-Term Memory) networks or **Facebook Prophet** to better capture long-term seasonal trends.
-* **Alerting:** Integrate Email or Slack notifications to alert engineers immediately if the forecast MAE exceeds a specific safety threshold.
+Streamlit will automatically open the dashboard in your browser at [http://localhost:8501](http://localhost:8501). The dashboard reads forecast and actuals data directly from PostgreSQL and renders an interactive Plotly chart.
 
-* Read the Article: [Building an Autonomous MLOps Weather Engine (Abuja, Nigeria)](https://medium.com/@ottneel/building-an-autonomous-mlops-weather-engine-abuja-nigeria-ff8e27e11df3)
+---
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+| :--- | :--- | :--- |
+| `could not connect to server` (PostgreSQL) | Container not running | Run `docker compose up -d` and re-check with `docker ps` |
+| `ModuleNotFoundError: No module named 'dotenv'` | Missing dependency | Run `pip install python-dotenv` |
+| `401 Unauthorized` (Visual Crossing) | Bad or missing API key | Verify `VISUAL_CROSSING_API_KEY` in `.env` |
+| `Model not found` in `predict.py` | Training not yet run | Complete Step 8 before Step 9 |
+| `MAE threshold exceeded` in `validate.py` | Insufficient or stale data | Re-run `ingest.py` to fetch fresh data, then retry |
+| MLflow UI shows no experiments | Wrong tracking URI | Ensure `MLFLOW_TRACKING_URI=./mlruns` is set in `.env` and you are running `mlflow ui` from the project root |
+| Streamlit dashboard shows no forecast | `predict.py` not yet run | Complete Step 9 before launching the dashboard |
