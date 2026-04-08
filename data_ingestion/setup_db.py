@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 # Helps us to Load environment variables from the .env file to the environment.
+# Force dotenv to override existing variables
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(override=True)
 
@@ -22,7 +23,8 @@ def get_database_url():
         print("ERROR: Missing DB_USER, DB_PASS, or DB_NAME in .env file.")
         sys.exit(1)
 
-    # Encode password to handle special chars like '@', '#' So it doesn't break if there are special characters in the password.
+    # Encode password to handle special chars like '@', '#' 
+    # So it doesn't break if there are special characters in the password.
     encoded_password = urllib.parse.quote_plus(password)
     return f"postgresql://{user}:{encoded_password}@{host}:{port}/{dbname}"
 
@@ -44,19 +46,53 @@ def setup_db():
             print("Setting up 'daily_weather' table...")
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS daily_weather (
-                    date DATE NOT NULL,
-                    city VARCHAR(50) NOT NULL,
-                    temp_avg FLOAT,
-                    temp_max FLOAT,
-                    temp_min FLOAT,
-                    humidity FLOAT,
-                    precip FLOAT,
-                    windspeed FLOAT,
-                    pressure FLOAT,
-                    cloudcover FLOAT,
-                    source VARCHAR(50),
-                    -- Composite key using date and city
-                    PRIMARY KEY (date, city)
+                    date            DATE            NOT NULL,
+                    city            VARCHAR(50)     NOT NULL,
+                    PRIMARY KEY (date, city),
+
+                    -- Temperature
+                    temp_avg        FLOAT,
+                    temp_max        FLOAT,
+                    temp_min        FLOAT,
+                    feelslike       FLOAT,
+                    feelslikemax    FLOAT,
+                    feelslikemin    FLOAT,
+
+                    -- Moisture
+                    dew             FLOAT,
+                    humidity        FLOAT,
+                    precip          FLOAT,
+                    precipprob      FLOAT,
+                    precipcover     FLOAT,
+                    preciptype      VARCHAR(50),
+                    snow            FLOAT,
+                    snowdepth       FLOAT,
+
+                    -- Wind
+                    windgust        FLOAT,
+                    windspeed       FLOAT,
+                    winddir         FLOAT,
+
+                    -- Atmosphere
+                    pressure        FLOAT,
+                    cloudcover      FLOAT,
+                    visibility      FLOAT,
+                    solarradiation  FLOAT,
+                    solarenergy     FLOAT,
+                    uvindex         FLOAT,
+                    severerisk      FLOAT,
+                    moonphase       FLOAT,
+
+                    -- Descriptive
+                    conditions      TEXT,
+                    description     TEXT,
+                    icon            VARCHAR(50),
+                    sunrise         VARCHAR(50),
+                    sunset          VARCHAR(50),
+                    stations        TEXT,
+
+                    -- Metadata
+                    source          VARCHAR(50)
                 );
             """))
 
@@ -90,7 +126,7 @@ def setup_db():
             """))
             print("Created 'daily_forecasts' with Indexes.")
 
-            #Saves the Changes Made to the dB
+            # Saves the Changes Made to the dB
             conn.commit()
             print("\nSUCCESS: Database tables are ready and optimized!")
 
