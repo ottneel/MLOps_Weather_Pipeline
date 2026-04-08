@@ -2,10 +2,12 @@ import os
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, MetaData, Table
+from sqlalchemy.dialects.postgresql import insert
 from dotenv import load_dotenv
 
 # Load environment variables
+# Force dotenv to override existing variables
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(override=True)
 
@@ -56,6 +58,21 @@ def fetch_weather_data(start_date, end_date):
     
     return response.json()
 
+
+def update_csv(df):
+    """Appends new rows to the CSV, or creates it if it doesn't exist."""
+    csv_path = "./we_csv_files/abuja_gapp_fill.csv"
+    
+    if os.path.exists(csv_path):
+        existing = pd.read_csv(csv_path)
+        updated = pd.concat([existing, df], ignore_index=True)
+        updated = updated.drop_duplicates(subset=['date', 'city'], keep='last')
+        updated.to_csv(csv_path, index=False)
+        print(f"CSV updated: {csv_path}")
+    else:
+        df.to_csv(csv_path, index=False)
+        print(f"CSV created: {csv_path}")
+
 def main():
     engine = get_db_engine()
     
@@ -82,21 +99,54 @@ def main():
         print("No data received from API.")
         return
 
-    # 3. Process Data (Modified to include specific requested fields)
+    # 3. Process Data
     new_rows = []
     for day in data['days']:
         row = {
-            'date': day['datetime'],           # YYYY-MM-DD
-            'city': CITY,
-            'temp_avg': day.get('temp'),
-            'temp_max': day.get('tempmax'),
-            'temp_min': day.get('tempmin'),
-            'humidity': day.get('humidity'),
-            'precip': day.get('precip'),
-            'windspeed': day.get('windspeed'),   
-            'pressure': day.get('pressure'),     
-            'cloudcover': day.get('cloudcover'), 
-            'source': day.get('source')          
+            'date':             day.get('datetime'),
+            'city':             CITY,
+            'source':           'visual_crossing_api',
+
+            # Temperature
+            'temp_avg':         day.get('temp'),
+            'temp_max':         day.get('tempmax'),
+            'temp_min':         day.get('tempmin'),
+            'feelslike':        day.get('feelslike'),
+            'feelslikemax':     day.get('feelslikemax'),
+            'feelslikemin':     day.get('feelslikemin'),
+
+            # Moisture
+            'dew':              day.get('dew'),
+            'humidity':         day.get('humidity'),
+            'precip':           day.get('precip') or 0.0,
+            'precipprob':       day.get('precipprob'),
+            'precipcover':      day.get('precipcover'),
+            'preciptype':       str(day.get('preciptype', [])),
+            'snow':             day.get('snow'),
+            'snowdepth':        day.get('snowdepth'),
+
+            # Wind
+            'windgust':         day.get('windgust'),
+            'windspeed':        day.get('windspeed'),
+            'winddir':          day.get('winddir'),
+
+            # Atmosphere
+            'pressure':         day.get('sealevelpressure'),
+            'cloudcover':       day.get('cloudcover'),
+            'visibility':       day.get('visibility'),
+            'solarradiation':   day.get('solarradiation'),
+            'solarenergy':      day.get('solarenergy'),
+            'uvindex':          day.get('uvindex'),
+            'severerisk':       day.get('severerisk'),
+            'moonphase':        day.get('moonphase'),
+
+            # Descriptive
+            'conditions':       day.get('conditions'),
+            'description':      day.get('description'),
+            'icon':             day.get('icon'),
+            'sunrise':          day.get('sunrise'),
+            'sunset':           day.get('sunset'),
+            'stations':         str(day.get('stations', [])),
         }
         new_rows.append(row)
 
@@ -107,9 +157,28 @@ def main():
         
         # Ensure 'date' column is actual date type for SQL
         df['date'] = pd.to_datetime(df['date']).dt.date
-        
-        df.to_sql(DB_TABLE, engine, if_exists='append', index=False)
+
+        # Upsert so re-running never causes duplicate key errors
+        metadata = MetaData()
+        table = Table(DB_TABLE, metadata, autoload_with=engine)
+
+        with engine.begin() as conn:
+            records = df.where(pd.notnull(df), None).to_dict(orient='records')
+            stmt = insert(table).values(records)
+            
+            # Define update logic: update everything except keys
+            update_dict = {
+                col.name: col
+                for col in stmt.excluded
+                if col.name not in ['date', 'city']
+            }
+            
+            conn.execute(stmt.on_conflict_do_update(
+                index_elements=['date', 'city'],
+                set_=update_dict
+            ))
         print("Success.")
+        update_csv(df)
     else:
         print("No rows to save.")
 
