@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, MetaData, Table, text
 from sqlalchemy.dialects.postgresql import insert
 from dotenv import load_dotenv
 
+# Force dotenv to override existing variables
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(override=True)
 
@@ -71,7 +72,7 @@ def upsert_in_chunks(df, engine, chunk_size):
 
             # 4. Execute
             conn.execute(on_conflict_stmt)
-            print(f"   ✓ Processed rows {start_idx} to {min(end_idx, total_rows)}")
+            print(f"Processed rows {start_idx} to {min(end_idx, total_rows)}")
 
     print("SUCCESS: All batches processed.")
 
