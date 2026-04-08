@@ -95,54 +95,37 @@ def load_history():
     print(f"Reading {file_path}...")
     
     try:
-        # 1. Read and Prep Data
+        # 1. Read ALL columns
         df = pd.read_csv(file_path)
-        
-        required_cols = [
-            'datetime', 'temp', 'tempmax', 'tempmin', 
-            'humidity', 'precip', 'windspeed', 
-            'sealevelpressure', 'cloudcover'
-        ]
-        
-        # Validation
-        missing = [c for c in required_cols if c not in df.columns]
-        if missing:
-            print(f"ERROR: CSV missing columns: {missing}")
-            return
 
-        clean_df = df[required_cols].copy()
-        
-        clean_df = clean_df.rename(columns={
-            'datetime': 'date',
-            'temp': 'temp_avg',
-            'tempmax': 'temp_max',
-            'tempmin': 'temp_min',
-            'sealevelpressure': 'pressure'
+        # 2. Rename and prep the key columns
+        df = df.rename(columns={
+            'datetime':         'date',
+            'sealevelpressure': 'pressure',
+            'temp':             'temp_avg',
+            'tempmax':          'temp_max',
+            'tempmin':          'temp_min',
+            'name':             'city'
         })
-        
-        clean_df['date'] = pd.to_datetime(clean_df['date'], format='mixed',dayfirst=True).dt.date
-        clean_df['precip'] = clean_df['precip'].fillna(0.0)
-        clean_df['city'] = 'Abuja'
-        clean_df['source'] = 'visual_crossing_csv'
 
-        # --- NEW: METHOD 1 (Pandas Deduplication) ---
-        # This removes duplicates inside the CSV before they ever reach the DB.
-        # We keep 'last' assuming the later row in the file is the most corrected version.
-        initial_count = len(clean_df)
-        clean_df = clean_df.drop_duplicates(subset=['date', 'city'], keep='last')
-        final_count = len(clean_df)
+        df['date'] = pd.to_datetime(df['date'], format='mixed', dayfirst=True).dt.date
+        df['precip'] = df['precip'].fillna(0.0)
+        df['city'] = 'Abuja'
+        df['source'] = 'visual_crossing_csv'
+
+        # 3. Deduplicate
+        initial_count = len(df)
+        df = df.drop_duplicates(subset=['date', 'city'], keep='last')
+        final_count = len(df)
 
         if initial_count > final_count:
-            print(f"⚠ Cleaned up {initial_count - final_count} duplicate rows in the CSV itself.")
-        # --------------------------------------------
+            print(f"Cleaned up {initial_count - final_count} duplicate rows.")
 
-        # 2. Run the Chunked Upsert
+        # 4. Upsert and verify
         engine = get_db_engine()
-        upsert_in_chunks(clean_df, engine, BATCH_SIZE)
-        
-        # 3. Verify
+        upsert_in_chunks(df, engine, BATCH_SIZE)
         verify_data(engine)
-        
+
     except Exception as e:
         print(f"\nCRITICAL ERROR: {e}")
 
