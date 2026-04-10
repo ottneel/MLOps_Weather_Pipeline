@@ -10,3 +10,4 @@ scikit-learn
 pmdarima
 streamlit
 plotly
+xgboost
