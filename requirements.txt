@@ -4,10 +4,14 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 requests
-statsmodels
-mlflow
+xgboost
 scikit-learn
+mlflow
+statsmodels
 pmdarima
 streamlit
 plotly
-xgboost
+seaborn
+matplotlib
+joblib
+shap

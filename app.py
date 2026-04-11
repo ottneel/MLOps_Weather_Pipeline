@@ -6,19 +6,19 @@ import os
 import urllib.parse
 from dotenv import load_dotenv
 
-# ── CONFIG & SETUP ────────────────────────────────────────────────────────────
+# setting up the web page
 st.set_page_config(page_title="Abuja Weather Forecast", layout="wide")
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(override=True)
 
-# ── DATABASE ──────────────────────────────────────────────────────────────────
+# Connecting to the database
 def get_db_connection():
     return create_engine(
         f"postgresql://{os.getenv('DB_USER')}:{urllib.parse.quote_plus(os.getenv('DB_PASS'))}@"
         f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
     )
 
-# ── LOAD DATA ─────────────────────────────────────────────────────────────────
+# Loading the data
 @st.cache_data(ttl=600)
 def load_data():
     engine = get_db_connection()
@@ -50,18 +50,18 @@ def load_data():
         ORDER BY forecast_date DESC, created_at DESC
         LIMIT 7
     """, engine)
-    df_rain['forecast_date'] = pd.to_datetime(df_rain['forecast_date'])
+    df_rain['forecast_date'] = pd.to_datetime(df_rain['forecast_date']).dt.date
     df_rain = df_rain.sort_values('forecast_date')
 
     return df_history, df_temp, df_rain
 
-# ── APP LAYOUT ────────────────────────────────────────────────────────────────
+# Customizing the App Layout
 try:
     df_history, df_temp, df_rain = load_data()
 
     st.title("Abuja Weather Forecast")
 
-    # ── RAIN SECTION (first) ──────────────────────────────────────────────────
+    # Fixing the Rain section first
     st.markdown("### Rain Forecast")
 
     if not df_rain.empty:
@@ -101,7 +101,7 @@ try:
         )
         st.plotly_chart(fig_rain, use_container_width=True)
 
-    # ── TEMPERATURE SECTION (second) ──────────────────────────────────────────
+    # Fixing the temperature section
     st.markdown("---")
     st.markdown("### Temperature")
     col1, col2, col3, col4 = st.columns(4)
@@ -144,7 +144,7 @@ try:
     )
     st.plotly_chart(fig_temp, use_container_width=True)
 
-    # ── RAW DATA TABLES ───────────────────────────────────────────────────────
+    # Imputing the Raw Data
     st.markdown("---")
     with st.expander("See Raw Data"):
         col_a, col_b, col_c = st.columns(3)
