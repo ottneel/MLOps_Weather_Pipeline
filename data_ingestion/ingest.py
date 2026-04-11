@@ -99,9 +99,11 @@ def main():
         print("No data received from API.")
         return
 
-    # 3. Process Data
+   # 3. Process Data
     new_rows = []
-    for day in data['days']:
+    for i, day in enumerate(data['days']):
+        if i == 0:
+            print("Available day keys:", list(day.keys()))
         row = {
             'date':             day.get('datetime'),
             'city':             CITY,
@@ -131,7 +133,7 @@ def main():
             'winddir':          day.get('winddir'),
 
             # Atmosphere
-            'pressure':         day.get('sealevelpressure'),
+            'pressure':         day.get('pressure'),
             'cloudcover':       day.get('cloudcover'),
             'visibility':       day.get('visibility'),
             'solarradiation':   day.get('solarradiation'),

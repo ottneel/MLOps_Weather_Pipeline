@@ -1,8 +1,6 @@
 import os
-import json
 import numpy as np
 import pandas as pd
-import urllib.parse
 import matplotlib.pyplot as plt
 import mlflow
 import mlflow.xgboost
@@ -10,7 +8,7 @@ from mlflow.tracking import MlflowClient
 from xgboost import XGBClassifier
 from sklearn.metrics import f1_score, confusion_matrix, ConfusionMatrixDisplay
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
-from sqlalchemy import create_engine
+from rain_features_eng import load_and_engineer
 from dotenv import load_dotenv
 
 
@@ -18,84 +16,14 @@ from dotenv import load_dotenv
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=env_path, override=True)
 
-CITY            = "Abuja"
+
 EXPERIMENT_NAME = "Abuja_Rain_Validation"
-MODEL_NAME      = "AbujaRain"
-PARAMS_PATH     = os.path.join(os.path.dirname(__file__), 'rainfall_best_params.json')
+
+
 
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "./mlruns"))
 mlflow.set_experiment(EXPERIMENT_NAME)
 
-# Initializing the Database
-def get_db_engine():
-    return create_engine(
-        f"postgresql://{os.getenv('DB_USER')}:{urllib.parse.quote_plus(os.getenv('DB_PASS'))}@"
-        f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-    )
-
-# Feature engineering
-def load_and_engineer():
-    """Load raw data from DB and build all features."""
-    engine = get_db_engine()
-    df = pd.read_sql(
-        "SELECT * FROM daily_weather WHERE city = city ORDER BY date",
-        engine, params={'city': CITY},
-        index_col='date', parse_dates=['date']
-    )
-
-    # Fix the small number of missing values
-    df['pressure']   = df['pressure'].ffill()
-    df['visibility'] = df['visibility'].ffill()
-
-    # Create Target — did it rain today?
-    df['is_rain'] = (df['precip'] > 0).astype(int)
-
-    # Drop leaky and redundant columns
-    to_drop = [
-        'precip', 'precipprob', 'precipcover', 'preciptype',
-        'conditions', 'description', 'icon', 'severerisk',
-        'snow', 'snowdepth', 'feelslike', 'feelslikemax', 'feelslikemin',
-        'dew', 'uvindex', 'temp_max', 'temp_min', 'solarenergy',
-        'city', 'source', 'stations', 'sunrise', 'sunset', 'windgust'
-    ]
-    df = df.drop(columns=[c for c in to_drop if c in df.columns])
-
-    # Lags — how many days back each feature is meaningful (from PACF analysis)
-    lag_config = {
-        'pressure':   [1],
-        'humidity':   [1, 2],
-        'temp_avg':   [1],
-        'cloudcover': [1, 2],
-        'visibility': [1, 2, 3],
-    }
-    for col, lags in lag_config.items():
-        for lag in lags:
-            df[f'{col}_lag{lag}'] = df[col].shift(lag)
-
-    # Deltas — direction of change (lag1 - lag2)
-    for col in ['humidity', 'cloudcover', 'visibility']:
-        df[f'{col}_delta'] = df[f'{col}_lag1'] - df[f'{col}_lag2']
-    df['pressure_delta'] = df['pressure'] - df['pressure_lag1']
-    df['temp_avg_delta'] = df['temp_avg'] - df['temp_avg_lag1']
-
-    # Cyclical encoding — month and wind direction are circular
-    df['month_sin']   = np.sin(2 * np.pi * df.index.month / 12)
-    df['month_cos']   = np.cos(2 * np.pi * df.index.month / 12)
-    df['winddir_sin'] = np.sin(2 * np.pi * df['winddir'] / 360)
-    df['winddir_cos'] = np.cos(2 * np.pi * df['winddir'] / 360)
-    df = df.drop(columns=['winddir'])
-
-    # Rolling means — medium term atmospheric state
-    for col in ['pressure', 'humidity']:
-        df[f'{col}_roll3'] = df[col].shift(1).rolling(3).mean()
-        df[f'{col}_roll7'] = df[col].shift(1).rolling(7).mean()
-
-    # Drop raw T0 features — we cant use today to predict today
-    t0_to_drop = ['temp_avg', 'humidity', 'pressure', 'cloudcover',
-                  'visibility', 'windspeed', 'solarradiation', 'moonphase']
-    df = df.drop(columns=[c for c in t0_to_drop if c in df.columns])
-
-    return df.dropna()
 
 # Hyperparameter Tuning
 def tune_params(df):
@@ -211,30 +139,38 @@ def validate():
         mlflow.log_metric("true_negatives",  tn)
         mlflow.log_metric("false_negatives", fn)
         mlflow.log_artifact(img_path)
+        mlflow.log_artifact(img_path)
+        os.remove(img_path)  # clean up local file after MLflow has it stored
 
-        # 5. Compare against saved params
-        if os.path.exists(PARAMS_PATH):
-            with open(PARAMS_PATH) as f:
-                saved = json.load(f)
-            saved_f1 = saved['avg_f1']
+        # 5. Compare against previous MLflow run
+        # Fetch last 2 runs — max_results=2 is the ceiling,
+        # but on the very first run only 1 will exist hence the len() check below
+        client = MlflowClient()
+        exp = client.get_experiment_by_name(EXPERIMENT_NAME)
+        runs = client.search_runs(
+            experiment_ids=[exp.experiment_id],
+            order_by=["start_time DESC"],
+            max_results=2
+        )
 
-            print(f"\nSaved params avg F1: {saved_f1}")
-            print(f"New params avg F1:   {new_avg_f1}")
+        if len(runs) >= 2:
+            # Second item is the previous run (most recent is current)
+            prev_f1 = float(runs[1].data.metrics.get('avg_wf_f1', 0))
+            print(f"\nPrevious avg F1: {prev_f1}")
+            print(f"New avg F1:      {new_avg_f1}")
 
-            if new_avg_f1 > saved_f1:
-                print("New params are better. Saving.")
-                json.dump({'params': new_params, 'avg_f1': new_avg_f1}, open(PARAMS_PATH, 'w'))
+            if new_avg_f1 > prev_f1:
+                print("New params are better.")
                 mlflow.log_param("validation_result", "improved")
             else:
-                print("Saved params are still better. No update.")
+                print("Previous params are still better.")
                 mlflow.log_param("validation_result", "no_change")
         else:
-            # First time running — save whatever we found
-            print("\nNo saved params found. Saving as baseline.")
-            json.dump({'params': new_params, 'avg_f1': new_avg_f1}, open(PARAMS_PATH, 'w'))
+            # Only 1 run exists — nothing to compare against yet
+            print("First validation run. Nothing to compare against.")
             mlflow.log_param("validation_result", "first_run")
 
-        print("\nDone. Run rainfall/train.py to build the production model.")
+        print("\nDone. Run rainfall/rain_train.py to build the production model.")
 
 if __name__ == "__main__":
     validate()
