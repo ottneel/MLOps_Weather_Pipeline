@@ -3,116 +3,161 @@ import pandas as pd
 import plotly.graph_objects as go
 from sqlalchemy import create_engine
 import os
+import urllib.parse
 from dotenv import load_dotenv
 
-# 1. Config & Setup
+# ── CONFIG & SETUP ────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Abuja Weather Forecast", layout="wide")
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(override=True)
 
-# 2. Database Connection
+# ── DATABASE ──────────────────────────────────────────────────────────────────
 def get_db_connection():
     return create_engine(
-        f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@"
+        f"postgresql://{os.getenv('DB_USER')}:{urllib.parse.quote_plus(os.getenv('DB_PASS'))}@"
         f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
     )
 
-# 3. Load Data
-@st.cache_data(ttl=600) # Cache data for 10 mins so the DB doesn't get hammered
+# ── LOAD DATA ─────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=600)
 def load_data():
     engine = get_db_connection()
-    
-    # A. Get Historical Data (Last 90 days only, to keep graph clean)
-    history_query = """
-    SELECT date, temp_avg, humidity 
-    FROM daily_weather
-    ORDER BY date DESC
-    LIMIT 90
-    """
-    df_history = pd.read_sql(history_query, engine)
+
+    # Historical weather (last 90 days)
+    df_history = pd.read_sql("""
+        SELECT date, temp_avg, humidity, cloudcover, pressure
+        FROM daily_weather
+        ORDER BY date DESC
+        LIMIT 90
+    """, engine)
     df_history['date'] = pd.to_datetime(df_history['date'])
-    
-    # B. Get Latest Forecast
-    # We only want the *most recent* batch of predictions made
-    forecast_query = """
-    SELECT forecast_date, predicted_temp
-    FROM daily_forecasts 
-    WHERE created_at = (SELECT MAX(created_at) FROM daily_forecasts)
-    ORDER BY forecast_date ASC
-    """
-    df_forecast = pd.read_sql(forecast_query, engine)
-    df_forecast['forecast_date'] = pd.to_datetime(df_forecast['forecast_date'])
-    
-    return df_history, df_forecast
 
-# 4. The App Layout
+    # Latest temperature forecast
+    df_temp = pd.read_sql("""
+        SELECT forecast_date, predicted_temp
+        FROM daily_forecasts
+        WHERE created_at = (SELECT MAX(created_at) FROM daily_forecasts)
+        ORDER BY forecast_date ASC
+    """, engine)
+    df_temp['forecast_date'] = pd.to_datetime(df_temp['forecast_date'])
+
+    # Latest rain forecast — one row per date, most recent prediction wins
+    df_rain = pd.read_sql("""
+        SELECT DISTINCT ON (forecast_date)
+               forecast_date, predicted_rain, rain_probability
+        FROM daily_rain_forecasts
+        WHERE city = 'Abuja'
+        ORDER BY forecast_date DESC, created_at DESC
+        LIMIT 7
+    """, engine)
+    df_rain['forecast_date'] = pd.to_datetime(df_rain['forecast_date'])
+    df_rain = df_rain.sort_values('forecast_date')
+
+    return df_history, df_temp, df_rain
+
+# ── APP LAYOUT ────────────────────────────────────────────────────────────────
 try:
-    df_history, df_forecast = load_data()
+    df_history, df_temp, df_rain = load_data()
 
-    st.title("🇳🇬 Abuja Weather Predictor")
-    st.markdown("### Temperature Forecast")
+    st.title("Abuja Weather Forecast")
 
-    # KPI Metrics Row
+    # ── RAIN SECTION (first) ──────────────────────────────────────────────────
+    st.markdown("### Rain Forecast")
+
+    if not df_rain.empty:
+        rain_cols = st.columns(min(4, len(df_rain)))
+        for i, (col, (_, row)) in enumerate(zip(rain_cols, df_rain.iterrows())):
+            label      = row['forecast_date'].strftime('%a %d %b')
+            prediction = "Rain" if row['predicted_rain'] == 1 else "No Rain"
+            confidence = f"{row['rain_probability']:.0%} confidence"
+            col.metric(label, prediction, confidence)
+
+    # Rain probability as line chart
+    if not df_rain.empty:
+        st.subheader("Rain Probability Trend")
+        fig_rain = go.Figure()
+
+        fig_rain.add_trace(go.Scatter(
+            x=df_rain['forecast_date'],
+            y=df_rain['rain_probability'] * 100,
+            mode='lines+markers',
+            name='Rain Probability',
+            line=dict(color='steelblue', width=2),
+            marker=dict(size=8)
+        ))
+
+        fig_rain.add_hline(
+            y=50, line_dash='dash',
+            line_color='white', opacity=0.5,
+            annotation_text="50% threshold"
+        )
+
+        fig_rain.update_layout(
+            xaxis_title="Date",
+            yaxis_title="Probability (%)",
+            yaxis_range=[0, 100],
+            template="plotly_dark",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_rain, use_container_width=True)
+
+    # ── TEMPERATURE SECTION (second) ──────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Temperature")
     col1, col2, col3, col4 = st.columns(4)
-    
-    # Latest actual reading
+
     current_temp = df_history.iloc[0]['temp_avg']
-    current_time = df_history.iloc[0]['date'].strftime('%Y-%m-%d')
-    
-    col1.metric("Yesterday's Temperature", f"{current_temp:.1f}°C", current_time)
-    
-    # Next predicted day
-    next_pred = df_forecast.iloc[0]['predicted_temp']
-    col2.metric("Today's Forecast", f"{next_pred:.3f}°C")
+    current_date = df_history.iloc[0]['date'].strftime('%Y-%m-%d')
+    col1.metric("Latest Reading", f"{current_temp:.1f}C", current_date)
 
-    # Next predicted day
-    next_pred = df_forecast.iloc[1]['predicted_temp']
-    col3.metric("Tomorrow's Forecast", f"{next_pred:.3f}°C")
-    
-    # Model Status
-    col4.metric("Model Status", "Active")
+    if len(df_temp) >= 1:
+        col2.metric("Today's Forecast", f"{df_temp.iloc[0]['predicted_temp']:.1f}C")
+    if len(df_temp) >= 2:
+        col3.metric("Tomorrow's Forecast", f"{df_temp.iloc[1]['predicted_temp']:.1f}C")
 
-    # MAIN CHART
-    st.subheader("Temperature Trend: History vs. Prediction")
-    
-    fig = go.Figure()
+    col4.metric("Model", "Active")
 
-    # Plot History (Blue Line)
-    fig.add_trace(go.Scatter(
-        x=df_history['date'], 
+    st.subheader("Temperature: History vs Forecast")
+    fig_temp = go.Figure()
+
+    fig_temp.add_trace(go.Scatter(
+        x=df_history['date'],
         y=df_history['temp_avg'],
         mode='lines',
-        name='Historical Data',
+        name='Historical',
         line=dict(color='deepskyblue', width=2)
     ))
 
-    # Plot Forecast (Red Dotted Line)
-    fig.add_trace(go.Scatter(
-        x=df_forecast['forecast_date'], 
-        y=df_forecast['predicted_temp'],
+    fig_temp.add_trace(go.Scatter(
+        x=df_temp['forecast_date'],
+        y=df_temp['predicted_temp'],
         mode='lines+markers',
         name='Forecast',
         line=dict(color='firebrick', width=2, dash='dash')
     ))
 
-    fig.update_layout(
+    fig_temp.update_layout(
         xaxis_title="Date",
-        yaxis_title="Temperature (°C)",
+        yaxis_title="Temperature (C)",
         template="plotly_dark",
         hovermode="x unified"
     )
+    st.plotly_chart(fig_temp, use_container_width=True)
 
-    st.plotly_chart(fig, use_container_width=True)
-
-    # --- DATA TABLES ---
+    # ── RAW DATA TABLES ───────────────────────────────────────────────────────
+    st.markdown("---")
     with st.expander("See Raw Data"):
-        col_a, col_b = st.columns(2)
+        col_a, col_b, col_c = st.columns(3)
+
         col_a.subheader("Recent History")
         col_a.dataframe(df_history.head(10))
-        
-        col_b.subheader("Upcoming Forecast")
-        col_b.dataframe(df_forecast)
+
+        col_b.subheader("Temperature Forecasts")
+        col_b.dataframe(df_temp)
+
+        col_c.subheader("Rain Forecasts")
+        col_c.dataframe(df_rain)
 
 except Exception as e:
     st.error(f"Connection Error: {e}")
-    st.info("Make sure Docker is running and you have run 'python predict.py' at least once.")
+    st.info("Make sure Docker is running and predictions have been generated.")
