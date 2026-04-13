@@ -8,7 +8,7 @@ from xgboost import XGBClassifier
 from rain_features_eng import load_and_engineer
 from dotenv import load_dotenv
 
-# ── SETUP ─────────────────────────────────────────────────────────────────────
+# Initial Setup
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=env_path, override=True)
 
@@ -18,7 +18,7 @@ MODEL_NAME      = "AbujaRain"
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "./mlruns"))
 mlflow.set_experiment(EXPERIMENT_NAME)
 
-# ── FETCH BEST PARAMS FROM MLFLOW ─────────────────────────────────────────────
+# Get the best Hyper Params
 def get_latest_params():
     """Fetch best params from the latest validate.py run in MLflow."""
     client = MlflowClient()
@@ -50,14 +50,14 @@ def get_latest_params():
 
     return params, avg_f1
 
-# ── MAIN ──────────────────────────────────────────────────────────────────────
+# Main Train
 def train():
     # 1. Get best params from MLflow
     params, avg_f1 = get_latest_params()
     print(f"Training with params: {params}")
     print(f"Expected walk-forward F1: {avg_f1}")
 
-    # 2. Load full dataset
+    # 2. Load full dataset and engineer
     print("\nLoading full dataset...")
     df = load_and_engineer()
     print(f"Training on {len(df)} rows")
