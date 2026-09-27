@@ -105,14 +105,16 @@ def setup_db():
             print("Created 'daily_weather' with Indexes.")
 
             # Create Daily Forecast table to hold the predictions.
-            conn.execute(text("DROP TABLE IF EXISTS daily_forecasts CASCADE;"))
-            print("Setting up 'daily_forecasts' table...")
+            conn.execute(text("DROP TABLE IF EXISTS daily_rain_forecasts CASCADE;"))
+            print("Setting up 'daily_rain_forecasts' table...")
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS daily_forecasts (
+                CREATE TABLE IF NOT EXISTS daily_rain_forecasts (
                     id SERIAL PRIMARY KEY,
                     forecast_date DATE NOT NULL,
                     city VARCHAR(50) NOT NULL,
-                    predicted_temp FLOAT,
+                    predicted_rain FLOAT,
+                    rain_probability FLOAT,
+                    threshold_used FLOAT,
                     model_version VARCHAR(50),
                     -- Use TIMESTAMPTZ for audit trails for when I move storage to the cloud
                     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -122,9 +124,9 @@ def setup_db():
             # Index for comparing forecasts vs actuals efficiently
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_forecast_lookup 
-                ON daily_forecasts (forecast_date, city);
+                ON daily_rain_forecasts (forecast_date, city);
             """))
-            print("Created 'daily_forecasts' with Indexes.")
+            print("Created 'daily_rain_forecasts' with Indexes.")
 
             # Saves the Changes Made to the dB
             conn.commit()
