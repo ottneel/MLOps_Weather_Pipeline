@@ -8,7 +8,6 @@ from xgboost import XGBClassifier
 from rain_features_eng import load_and_engineer
 from dotenv import load_dotenv
 
-# Initial Setup
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=env_path, override=True)
 
@@ -18,9 +17,7 @@ MODEL_NAME      = "AbujaRain"
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "./mlruns"))
 mlflow.set_experiment(EXPERIMENT_NAME)
 
-# Get the best Hyper Params
 def get_latest_params():
-    """Fetch best params from the latest validate.py run in MLflow."""
     client = MlflowClient()
     exp = client.get_experiment_by_name("Abuja_Rain_Validation")
 
@@ -39,7 +36,6 @@ def get_latest_params():
     latest_run = runs[0]
     print(f"Fetching params from validation run: {latest_run.info.run_id}")
 
-    # Cast types explicitly — MLflow stores everything as strings
     params = {
         'n_estimators':  int(latest_run.data.params['n_estimators']),
         'max_depth':     int(latest_run.data.params['max_depth']),
@@ -50,33 +46,27 @@ def get_latest_params():
 
     return params, avg_f1
 
-# Main Train
 def train():
-    # 1. Get best params from MLflow
     params, avg_f1 = get_latest_params()
     print(f"Training with params: {params}")
     print(f"Expected walk-forward F1: {avg_f1}")
 
-    # 2. Load full dataset and engineer
     print("\nLoading full dataset...")
     df = load_and_engineer()
     print(f"Training on {len(df)} rows")
 
-    X = df.drop(columns=['is_rain'])
-    y = df['is_rain']
+    X = df.drop(columns=['is_rain_tomorrow'])
+    y = df['is_rain_tomorrow']
 
     with mlflow.start_run(run_name="Rainfall_Production_Build"):
 
-        # 3. Train on full data
         model = XGBClassifier(**params, random_state=42, eval_metric='logloss')
         model.fit(X, y)
 
-        # 4. Log to MLflow
         mlflow.log_params(params)
         mlflow.log_metric("avg_wf_f1",     avg_f1)
         mlflow.log_metric("training_rows", len(df))
 
-        # 5. Register model in MLflow
         model_info = mlflow.xgboost.log_model(
             model,
             artifact_path="model",
@@ -84,7 +74,6 @@ def train():
         )
         print(f"\nModel registered as version {model_info.registered_model_version}")
 
-        # 6. Promote to Production — archives all previous versions automatically
         client = MlflowClient()
         client.transition_model_version_stage(
             name=MODEL_NAME,

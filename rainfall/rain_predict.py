@@ -26,13 +26,9 @@ def get_db_engine():
 
 # ── LOAD RECENT RAW DATA ──────────────────────────────────────────────────────
 def load_recent_data(engine):
-    """
-    Fetch the last 10 days from DB.
-    We need at least 7 days to build all lags and rolling means.
-    """
     query = text("""
         SELECT date, temp_avg, humidity, pressure, cloudcover,
-               visibility, windspeed, winddir, solarradiation, moonphase
+               visibility, windspeed, winddir, solarradiation, moonphase, precip
         FROM daily_weather
         WHERE city = :city
         ORDER BY date DESC
@@ -41,7 +37,6 @@ def load_recent_data(engine):
     df = pd.read_sql(query, engine, params={'city': CITY},
                      index_col='date', parse_dates=['date'])
 
-    # Sort ascending so lags are computed in the right direction
     return df.sort_index()
 
 # ── SAVE FORECAST TO DB ───────────────────────────────────────────────────────

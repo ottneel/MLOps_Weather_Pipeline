@@ -11,7 +11,7 @@ env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(override=True)
 
 # --- CONFIGURATION ---
-CSV_FILENAME = "abuja_gapp_fill.csv"
+CSV_FILENAME = "abuja_weather_csv.csv"
 CSV_FOLDER = "./we_csv_files"
 TABLE_NAME = "daily_weather"
 BATCH_SIZE = 200  # Process 200 rows at a time to prevent "Too Many Parameters" error
@@ -108,7 +108,7 @@ def load_history():
             'name':             'city'
         })
 
-        df['date'] = pd.to_datetime(df['date'], format='mixed', dayfirst=True).dt.date
+        df['date'] = pd.to_datetime(df['date'], format='mixed').dt.date
         df['precip'] = df['precip'].fillna(0.0)
         df['city'] = 'Abuja'
         df['source'] = 'visual_crossing_csv'
