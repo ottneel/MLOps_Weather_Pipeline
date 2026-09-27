@@ -61,7 +61,7 @@ try:
 
     st.title("Abuja Weather Forecast")
 
-    # Fixing the Rain section first
+    # Fixing the Rain section
     st.markdown("### Rain Forecast")
 
     if not df_rain.empty:

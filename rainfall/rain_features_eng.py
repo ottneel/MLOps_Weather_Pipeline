@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import urllib.parse
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 def get_db_engine():
     return create_engine(
@@ -58,7 +58,7 @@ def load_and_engineer(city="Abuja"):
     """
     engine = get_db_engine()
     df = pd.read_sql(
-        "SELECT * FROM daily_weather WHERE city = :city ORDER BY date",
+        text("SELECT * FROM daily_weather WHERE city = :city ORDER BY date"),
         engine, params={'city': city},
         index_col='date', parse_dates=['date']
     )
