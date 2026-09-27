@@ -15,6 +15,12 @@ load_dotenv(dotenv_path=env_path, override=True)
 CITY       = "Abuja"
 MODEL_NAME = "AbujaRain"
 
+SEASON_THRESHOLDS = {
+    'dry': 0.372,
+    'wet': 0.566,
+}
+WET_MONTHS = [4, 5, 6, 7, 8, 9, 10]
+
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "./mlruns"))
 
 # ── DATABASE ──────────────────────────────────────────────────────────────────
@@ -39,13 +45,19 @@ def load_recent_data(engine):
 
     return df.sort_index()
 
+# ── THRESHOLD ─────────────────────────────────────────────────────────────────
+def get_threshold(forecast_date):
+    season = 'wet' if forecast_date.month in WET_MONTHS else 'dry'
+    return SEASON_THRESHOLDS[season]
+
 # ── SAVE FORECAST TO DB ───────────────────────────────────────────────────────
-def save_forecast(engine, forecast_date, prediction, probability):
+def save_forecast(engine, forecast_date, prediction, probability, threshold):
     row = pd.DataFrame([{
         'forecast_date':    forecast_date,
         'city':             CITY,
         'predicted_rain':   int(prediction),
         'rain_probability': round(float(probability), 4),
+        'threshold_used':   threshold,
         'model_version':    'AbujaRain_Production',
         'created_at':       datetime.now()
     }])
@@ -79,15 +91,17 @@ def predict():
     X_today = X_today[model.feature_names_in_]
 
     # 5. Predict
-    prediction  = model.predict(X_today)[0]
     probability = model.predict_proba(X_today)[0][1]  # P(rain)
+    threshold   = get_threshold(target)
+    prediction  = int(probability >= threshold)
 
     print(f"\nForecast for {target}:")
     print(f"  Prediction:  {'Rain' if prediction == 1 else 'No Rain'}")
     print(f"  Confidence:  {probability:.1%}")
+    print(f"  Threshold:   {threshold} ({'wet' if target.month in WET_MONTHS else 'dry'} season)")
 
     # 6. Save to DB
-    save_forecast(engine, target, prediction, probability)
+    save_forecast(engine, target, prediction, probability, threshold)
     print("Forecast saved to DB.")
 
 if __name__ == "__main__":
